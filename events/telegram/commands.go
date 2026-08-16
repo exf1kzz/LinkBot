@@ -3,7 +3,9 @@ package telegram
 import (
 	"LinkBot/lib/e"
 	"LinkBot/storage"
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/url"
 	"strings"
@@ -11,9 +13,13 @@ import (
 
 var (
 	RndCmd   = "/rnd"
+	AllCmd   = "/all"
+	ListCmd  = "/list"
 	HelpCmd  = "/help"
 	StartCmd = "/start"
 )
+
+const telegramMessageLimit = 4000
 
 func (p *Processor) doCmd(text string, chatID int, username string) error {
 	text = strings.TrimSpace(text)
@@ -27,6 +33,8 @@ func (p *Processor) doCmd(text string, chatID int, username string) error {
 	switch text {
 	case RndCmd:
 		return p.sendRandom(chatID, username)
+	case AllCmd, ListCmd:
+		return p.sendAll(chatID, username)
 	case HelpCmd:
 		return p.sendHelp(chatID)
 	case StartCmd:
@@ -45,7 +53,7 @@ func (p *Processor) savePage(chatID int, pageURL string, username string) (err e
 		UserName: username,
 	}
 
-	isExists, err := p.storage.Exists(page)
+	isExists, err := p.storage.Exists(context.Background(), page)
 	if err != nil {
 		return err
 	}
@@ -54,7 +62,7 @@ func (p *Processor) savePage(chatID int, pageURL string, username string) (err e
 		return p.tg.SendMessage(chatID, msgAlreadyExists)
 	}
 
-	if err := p.storage.Save(page); err != nil {
+	if err := p.storage.Save(context.Background(), page); err != nil {
 		return err
 	}
 
@@ -68,7 +76,7 @@ func (p *Processor) savePage(chatID int, pageURL string, username string) (err e
 func (p *Processor) sendRandom(chatID int, username string) (err error) {
 	defer func() { err = e.WrapIfErr("can't pick random page", err) }()
 
-	page, err := p.storage.PickRandom(username)
+	page, err := p.storage.PickRandom(context.Background(), username)
 	if err != nil && !errors.Is(err, storage.ErrNoSavedPages) {
 		return err
 	}
@@ -80,7 +88,27 @@ func (p *Processor) sendRandom(chatID int, username string) (err error) {
 		return err
 	}
 
-	return p.storage.Remove(page)
+	return p.storage.Remove(context.Background(), page)
+}
+
+func (p *Processor) sendAll(chatID int, username string) (err error) {
+	defer func() { err = e.WrapIfErr("can't list pages", err) }()
+
+	pages, err := p.storage.List(context.Background(), username)
+	if err != nil && !errors.Is(err, storage.ErrNoSavedPages) {
+		return err
+	}
+	if errors.Is(err, storage.ErrNoSavedPages) {
+		return p.tg.SendMessage(chatID, msgNoSavedPages)
+	}
+
+	for _, message := range formatPagesList(pages) {
+		if err := p.tg.SendMessage(chatID, message); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (p *Processor) sendHelp(chatID int) error {
@@ -98,4 +126,43 @@ func isAddCmd(text string) bool {
 func isURL(text string) bool {
 	u, err := url.Parse(text)
 	return err == nil && u.Host != ""
+}
+
+func formatPagesList(pages []storage.Page) []string {
+	var (
+		chunks  []string
+		current strings.Builder
+	)
+
+	current.WriteString(msgAllLinksHeader)
+	current.WriteString("\n\n")
+
+	for i, page := range pages {
+		appendMessageLine(&chunks, &current, fmt.Sprintf("%d. %s\n", i+1, page.URL))
+	}
+
+	if current.Len() > 0 {
+		chunks = append(chunks, strings.TrimRight(current.String(), "\n"))
+	}
+
+	return chunks
+}
+
+func appendMessageLine(chunks *[]string, current *strings.Builder, line string) {
+	if current.Len()+len(line) > telegramMessageLimit && current.Len() > 0 {
+		*chunks = append(*chunks, strings.TrimRight(current.String(), "\n"))
+		current.Reset()
+	}
+
+	for len(line) > telegramMessageLimit {
+		if current.Len() > 0 {
+			*chunks = append(*chunks, strings.TrimRight(current.String(), "\n"))
+			current.Reset()
+		}
+
+		*chunks = append(*chunks, line[:telegramMessageLimit])
+		line = line[telegramMessageLimit:]
+	}
+
+	current.WriteString(line)
 }

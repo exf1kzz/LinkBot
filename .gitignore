@@ -24,9 +24,21 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Local config and secrets
 .env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+files_storage/
+*.db
+*.db-*
+
+# Local binaries
+LinkBot
+linkbot
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/

@@ -1,0 +1,14 @@
+services:
+  linkbot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      STORAGE_PATH: /app/data/sqlite/storage.db
+    volumes:
+      - linkbot-data:/app/data
+
+volumes:
+  linkbot-data:
