@@ -3,6 +3,7 @@ package telegram
 import (
 	"LinkBot/lib/e"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -21,8 +22,8 @@ const (
 	sendMessageMethod = "sendMessage"
 )
 
-func New(host, token string) Client {
-	return Client{
+func New(host, token string) *Client {
+	return &Client{
 		host:     host,
 		basePath: newBasePath(token),
 		client:   http.Client{},
@@ -46,6 +47,9 @@ func (c *Client) Updates(offset int, limit int) ([]Update, error) {
 	var res UpdateResponse
 	if err := json.Unmarshal(data, &res); err != nil {
 		return nil, err
+	}
+	if !res.Ok {
+		return nil, fmt.Errorf("telegram api returned ok=false")
 	}
 
 	return res.Result, nil
@@ -89,6 +93,10 @@ func (c *Client) doRequest(method string, query url.Values) (data []byte, err er
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("telegram api returned %s: %s", resp.Status, string(body))
 	}
 
 	return body, nil

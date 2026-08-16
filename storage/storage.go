@@ -2,6 +2,7 @@ package storage
 
 import (
 	"LinkBot/lib/e"
+	"context"
 	"crypto/sha1"
 	"errors"
 	"fmt"
@@ -9,10 +10,11 @@ import (
 )
 
 type Storage interface {
-	Save(p *Page) error
-	PickRandom(userName string) (*Page, error)
-	Remove(p *Page) error
-	Exists(p *Page) (bool, error)
+	Save(ctx context.Context, p *Page) error
+	PickRandom(ctx context.Context, userName string) (*Page, error)
+	List(ctx context.Context, userName string) ([]Page, error)
+	Remove(ctx context.Context, p *Page) error
+	Exists(ctx context.Context, p *Page) (bool, error)
 }
 
 type Page struct {

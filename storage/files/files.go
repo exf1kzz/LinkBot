@@ -3,6 +3,7 @@ package files
 import (
 	"LinkBot/lib/e"
 	"LinkBot/storage"
+	"context"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -22,7 +23,7 @@ func New(basePath string) Storage {
 	return Storage{basePath: basePath}
 }
 
-func (s Storage) Save(page *storage.Page) (err error) {
+func (s Storage) Save(ctx context.Context, page *storage.Page) (err error) {
 	defer func() { err = e.WrapIfErr("can't save page", err) }()
 
 	fPath := filepath.Join(s.basePath, page.UserName)
@@ -52,8 +53,8 @@ func (s Storage) Save(page *storage.Page) (err error) {
 	return nil
 }
 
-func (s Storage) PickRandom(userName string) (page *storage.Page, err error) {
-	defer func() { err = e.Wrap("can't pick random page", err) }()
+func (s Storage) PickRandom(ctx context.Context, userName string) (page *storage.Page, err error) {
+	defer func() { err = e.WrapIfErr("can't pick random page", err) }()
 
 	path := filepath.Join(s.basePath, userName)
 
@@ -74,7 +75,35 @@ func (s Storage) PickRandom(userName string) (page *storage.Page, err error) {
 	return s.DecodePage(filepath.Join(path, file.Name()))
 }
 
-func (s Storage) Remove(p *storage.Page) error {
+func (s Storage) List(ctx context.Context, userName string) ([]storage.Page, error) {
+	path := filepath.Join(s.basePath, userName)
+
+	files, err := os.ReadDir(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, storage.ErrNoSavedPages
+	}
+	if err != nil {
+		return nil, e.Wrap("can't list pages", err)
+	}
+
+	pages := make([]storage.Page, 0, len(files))
+	for _, file := range files {
+		page, err := s.DecodePage(filepath.Join(path, file.Name()))
+		if err != nil {
+			return nil, err
+		}
+
+		pages = append(pages, *page)
+	}
+
+	if len(pages) == 0 {
+		return nil, storage.ErrNoSavedPages
+	}
+
+	return pages, nil
+}
+
+func (s Storage) Remove(ctx context.Context, p *storage.Page) error {
 	fileName, err := FileName(p)
 	if err != nil {
 		return e.Wrap("can't remove page", err)
@@ -90,7 +119,7 @@ func (s Storage) Remove(p *storage.Page) error {
 	return nil
 }
 
-func (s Storage) Exists(p *storage.Page) (bool, error) {
+func (s Storage) Exists(ctx context.Context, p *storage.Page) (bool, error) {
 	fileName, err := FileName(p)
 	if err != nil {
 		return false, e.Wrap("can't check if file %s exists", err)
